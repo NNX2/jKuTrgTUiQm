@@ -1,0 +1,114 @@
+-- Variables
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local desiredSpeed = 100 -- Définissez la vitesse de déplacement souhaitée ici
+local defaultSpeed = 16 -- Vitesse par défaut du personnage
+local bypassActive = false -- État du bypass (activé/désactivé)
+
+-- Fonction pour désactiver les touches Shift et Ctrl si le bypass est actif
+local function disableSprintKeys()
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if bypassActive and (input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift or 
+           input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl) then
+            -- Empêche le traitement des touches Shift et Ctrl si le bypass est actif
+            return true
+        end
+    end)
+end
+
+-- Fonction pour détecter et empêcher le noclip
+local function preventNoclip(Humanoid, Character)
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not HumanoidRootPart then return end
+
+    -- Surveillance en continu pour les collisions
+    RunService.Heartbeat:Connect(function()
+        if bypassActive and Humanoid.MoveDirection.Magnitude > 0 then
+            -- Crée un rayon devant le personnage pour détecter les obstacles
+            local rayDirection = HumanoidRootPart.CFrame.LookVector * (Humanoid.WalkSpeed * 0.5) -- Distance proportionnelle à la vitesse
+            local rayOrigin = HumanoidRootPart.Position
+            local rayParams = RaycastParams.new()
+            rayParams.FilterDescendantsInstances = {Character} -- Ignore le propre personnage
+            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+            -- Effectue le raycast pour détecter un obstacle
+            local result = workspace:Raycast(rayOrigin, rayDirection, rayParams)
+
+            if result then
+                -- Si un obstacle est détecté, arrête le mouvement du personnage pour éviter le noclip
+                HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                print("Obstacle détecté! Collision évitée.")
+            end
+        end
+    end)
+end
+
+-- Fonction pour surveiller et appliquer la vitesse de déplacement avec détection de noclip
+local function setSpeed(speed)
+    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+
+    if Humanoid then
+        -- Surveiller la propriété WalkSpeed pour éviter les changements externes
+        Humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if bypassActive and Humanoid.WalkSpeed ~= speed then
+                Humanoid.WalkSpeed = speed
+            end
+        end)
+
+        -- Empêche le noclip lorsque le bypass est actif
+        preventNoclip(Humanoid, Character)
+
+        -- Appliquer la modification de vitesse selon la direction du mouvement
+        RunService.Heartbeat:Connect(function()
+            if bypassActive and Humanoid.MoveDirection.Magnitude > 0 then
+                Character:TranslateBy(Humanoid.MoveDirection * speed * RunService.Heartbeat:Wait())
+            end
+        end)
+    end
+end
+
+-- Fonction pour activer ou désactiver le bypass
+local function toggleBypass()
+    bypassActive = not bypassActive
+    if bypassActive then
+        print("Bypass activé")
+        setSpeed(desiredSpeed)
+    else
+        print("Bypass désactivé")
+        -- Réinitialiser la vitesse par défaut du joueur
+        local Character = LocalPlayer.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        if Humanoid then
+            Humanoid.WalkSpeed = defaultSpeed -- Réinitialisation à la vitesse par défaut
+        end
+    end
+end
+
+-- Fonction principale pour configurer le script
+local function initScript()
+    -- Appliquer la désactivation des touches de sprint si le bypass est actif
+    disableSprintKeys()
+
+    -- Configurer le toggle pour la touche "B"
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if input.KeyCode == Enum.KeyCode.B and not gameProcessed then
+            toggleBypass()
+        end
+    end)
+
+    -- Activer la gestion de la vitesse une fois le personnage chargé
+    LocalPlayer.CharacterAdded:Connect(function()
+        setSpeed(desiredSpeed)
+    end)
+
+    -- Si le personnage est déjà chargé
+    if LocalPlayer.Character then
+        setSpeed(desiredSpeed)
+    end
+end
+
+-- Initialiser le script
+initScript()
